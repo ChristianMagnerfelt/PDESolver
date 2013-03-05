@@ -113,6 +113,8 @@ int main(int argc, const char * argv [])
 
 	double startTime, endTime;
 	
+	omp_set_num_threads(g_numWorkers);
+	
 	// Do calculations	
 	startTime = omp_get_wtime();
 	auto & result = jacobi(gridG, gridT, g_numIters);
@@ -157,16 +159,17 @@ void initializeGrid(Matrix<T> & grid)
 template <typename T> 
 Matrix<T> & jacobi(Matrix<T> & gridG, Matrix<T> & gridT, std::size_t numIters)
 {
-
 	for(std::size_t t = 0; t < numIters; ++t)
 	{
+		#pragma omp parallel for schedule(dynamic)
 		for(std::size_t i = 1; i < gridG.size() - 1; ++i)
 		{
 			for(std::size_t j = 1; j < gridG.size() - 1; ++j)
 			{
-						gridT[i][j] = (gridG[i][j-1] + gridG[i-1][j] + gridG[i+1][j] + gridG[i][j+1]) / static_cast<T>(4);
+				gridT[i][j] = (gridG[i][j-1] + gridG[i-1][j] + gridG[i+1][j] + gridG[i][j+1]) / static_cast<T>(4);
 			}
 		}
+
 		Matrix<T>::swap(gridG, gridT);
 	}
 	return gridG;
