@@ -4,6 +4,7 @@
  *	\author			Christian Magnerfelt
  *	\email			magnerf@kth.se
  */
+#include <omp.h>
 
 #include <vector>
 #include <string>
@@ -26,7 +27,7 @@ std::string g_outFileName = DEFAULT_OUT_FILENAME;
 
 std::fstream out;
 
-int g_fpPrecision = 2;	//!< Floating point precision for streams
+int g_fpPrecision = 4;	//!< Floating point precision for streams
 
 /*!
  *	\brief	A matrix class implementing the RAII pinciple
@@ -96,9 +97,9 @@ int main(int argc, const char * argv [])
 		return 0;
 	
 	}
-	out << "Grid size is " << g_gridSize << std::endl;
-	out << "Number of iterations is " << g_numIters << std::endl;
-	out << "Number of workers is " << g_numWorkers << std::endl;
+	std::cout << "Grid size is " << g_gridSize << std::endl;
+	std::cout << "Number of iterations is " << g_numIters << std::endl;
+	std::cout << "Number of workers is " << g_numWorkers << std::endl;
 	
 	// Initialize grid
 	Matrix<float> gridG(g_gridSize + 2);
@@ -108,11 +109,16 @@ int main(int argc, const char * argv [])
 	initializeGrid(gridT);
 
 	// Set precision for cout
-	out << std::setprecision(g_fpPrecision);
-	out << "Floating point precision is " << g_fpPrecision << std::endl;
+	out << std::setprecision(g_fpPrecision) << std::fixed;
+
+	double startTime, endTime;
 	
 	// Do calculations	
+	startTime = omp_get_wtime();
 	auto & result = jacobi(gridG, gridT, g_numIters);
+	endTime = omp_get_wtime();
+	
+	std::cout << "Calculations took " << endTime - startTime << " seconds" << std::endl;
 	
 	// Print result
 	printGrid(result);
