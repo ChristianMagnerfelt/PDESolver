@@ -8,16 +8,25 @@
 #include <vector>
 #include <string>
 #include <iostream>
+#include <fstream>
 #include <sstream>
+#include <iomanip>
+#include <string>
 
 // Global variables
 const std::size_t DEFAULT_GRID_SIZE = 10;
 const std::size_t DEFAULT_NUM_ITERS = 10;
 const std::size_t DEFAULT_NUM_WORKERS = 10;
+const std::string DEFAULT_OUT_FILENAME ("result.out");
 
 std::size_t g_gridSize = DEFAULT_GRID_SIZE;
 std::size_t g_numIters = DEFAULT_NUM_ITERS;
 std::size_t g_numWorkers = DEFAULT_NUM_WORKERS;
+std::string g_outFileName = DEFAULT_OUT_FILENAME;
+
+std::fstream out;
+
+int g_fpPrecision = 2;	//!< Floating point precision for streams
 
 /*!
  *	\brief	A matrix class implementing the RAII pinciple
@@ -40,20 +49,24 @@ class Matrix{
 		value_type * end(){ return (m_size > 0)? &(m_data[m_size * m_size]) : 0; }
 		
 		std::size_t size() const { return m_size; }
+		
+		static void swap(Matrix<T> & matA, Matrix<T> & matB);
 	private:
 		std::size_t m_size;	
 		value_type * m_data;
 };
+
+// Matrix non-member functions
+template <typename T> 
+Matrix<T> & jacobi(Matrix<T> & gridG, Matrix<T> & gridT, std::size_t numIters);
+template <typename T>
+void printGrid(const Matrix<T> & grid);
 
 // Function prototypes
 template <typename T>
 void cmdLineArgToValue(const char * str, T & value, T defValue = T());
 template <typename T>
 void initializeGrid(Matrix<T> & grid);
-template <typename T> 
-Matrix<T> & jacobi(Matrix<T> & gridG, Matrix<T> & gridT, std::size_t numIters);
-template <typename T>
-void printGrid(const Matrix<T> & grid);
 
 /*!
  *	\brief	Program entry point
@@ -66,6 +79,8 @@ int main(int argc, const char * argv [])
 		switch(argc)
 		{	
 			default :
+			case (5) :
+				cmdLineArgToValue(argv[4], g_outFileName, DEFAULT_OUT_FILENAME);
 			case (4) :
   				cmdLineArgToValue(argv[3], g_numWorkers, DEFAULT_NUM_WORKERS);
 			case (3) :
@@ -74,9 +89,16 @@ int main(int argc, const char * argv [])
 				cmdLineArgToValue(argv[1], g_gridSize, DEFAULT_GRID_SIZE);		
 		}
 	}
-	std::cout << "Grid size is " << g_gridSize << std::endl;
-	std::cout << "Number of iterations is " << g_numIters << std::endl;
-	std::cout << "Number of workers is " << g_numWorkers << std::endl;
+	out.open(g_outFileName.data(), std::ios_base::out);
+	if(out.fail())
+	{
+		std::cerr << "Failed to open file " << g_outFileName.data() << std::endl;
+		return 0;
+	
+	}
+	out << "Grid size is " << g_gridSize << std::endl;
+	out << "Number of iterations is " << g_numIters << std::endl;
+	out << "Number of workers is " << g_numWorkers << std::endl;
 	
 	// Initialize grid
 	Matrix<float> gridG(g_gridSize + 2);
@@ -84,11 +106,18 @@ int main(int argc, const char * argv [])
 	
 	initializeGrid(gridG);
 	initializeGrid(gridT);
+
+	// Set precision for cout
+	out << std::setprecision(g_fpPrecision);
+	out << "Floating point precision is " << g_fpPrecision << std::endl;
 	
+	// Do calculations	
 	auto & result = jacobi(gridG, gridT, g_numIters);
 	
+	// Print result
 	printGrid(result);
 	
+	out.close();
 	return 0;
 }
 /*!
@@ -132,6 +161,7 @@ Matrix<T> & jacobi(Matrix<T> & gridG, Matrix<T> & gridT, std::size_t numIters)
 						gridT[i][j] = (gridG[i][j-1] + gridG[i-1][j] + gridG[i+1][j] + gridG[i][j+1]) / static_cast<T>(4);
 			}
 		}
+		Matrix<T>::swap(gridG, gridT);
 	}
 	return gridG;
 }
@@ -145,9 +175,9 @@ void printGrid(const Matrix<T> & grid)
 	{
 		for(std::size_t j = 0; j < grid.size(); ++j)
 		{
-			std::cout << grid[i][j] << " ";
+			out << grid[i][j] << " ";
 		}
-		std::cout << std::endl;
+		out << std::endl;
 	}
 }
 /*!	
@@ -164,4 +194,15 @@ void cmdLineArgToValue(const char * str, T & value, T defValue = T())
 		value = defValue;
 		std::cerr << "String: " << str << " is not a valid format" << std::endl;
 	}
+}
+/*!
+ *	\brief	Swaps internal pointers of two matrices
+ *
+ */
+template <typename T>
+void Matrix<T>::swap(Matrix<T> & matA, Matrix<T> & matB)
+{
+	value_type * tmp = matA.m_data;
+	matA.m_data = matB.m_data;
+	matB.m_data = tmp;
 }
