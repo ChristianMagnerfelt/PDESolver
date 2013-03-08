@@ -8,11 +8,15 @@
 
 #include <vector>
 #include <string>
+
 #include <iostream>
 #include <fstream>
 #include <sstream>
 #include <iomanip>
-#include <string>
+
+#include <algorithm>
+
+#include <cmath>
 
 // Global variables
 const std::size_t DEFAULT_GRID_SIZE = 10;
@@ -28,6 +32,7 @@ std::string g_outFileName = DEFAULT_OUT_FILENAME;
 std::fstream out;
 
 int g_fpPrecision = 4;	//!< Floating point precision for streams
+float g_e; // Maximum error ( epsilon )
 
 /*!
  *	\brief	A matrix class implementing the RAII pinciple
@@ -57,17 +62,21 @@ class Matrix{
 		value_type * m_data;
 };
 
-// Matrix non-member functions
+// Matrix non-member functions ( Grid specific )
 template <typename T> 
-Matrix<T> & jacobi(Matrix<T> & gridG, Matrix<T> & gridT, std::size_t numIters);
+Matrix<T> & jacobi(Matrix<T> & gridG, Matrix<T> & gridT, std::size_t numIters, T & e);
 template <typename T>
 void printGrid(const Matrix<T> & grid);
+template <typename T>
+void initializeGrid(Matrix<T> & grid);
+template <typename T>
+T calculateDifference(Matrix<T> & gridG, Matrix<T> & gridT);
+
 
 // Function prototypes
 template <typename T>
 void cmdLineArgToValue(const char * str, T & value, T defValue = T());
-template <typename T>
-void initializeGrid(Matrix<T> & grid);
+
 
 /*!
  *	\brief	Program entry point
@@ -104,7 +113,8 @@ int main(int argc, const char * argv [])
 	// Initialize grid
 	Matrix<float> gridG(g_gridSize + 2);
 	Matrix<float> gridT(g_gridSize + 2);
-	
+	g_e = 0;	
+
 	initializeGrid(gridG);
 	initializeGrid(gridT);
 
@@ -115,9 +125,9 @@ int main(int argc, const char * argv [])
 	
 	// Do calculations	
 	startTime = omp_get_wtime();
-	auto & result = jacobi(gridG, gridT, g_numIters);
+	auto & result = jacobi(gridG, gridT, g_numIters, g_e);
 	endTime = omp_get_wtime();
-	
+	std::cout << "Maximum error" << g_e << std::endl;
 	std::cout << "Calculations took " << endTime - startTime << " seconds" << std::endl;
 	
 	// Print result
@@ -155,9 +165,8 @@ void initializeGrid(Matrix<T> & grid)
  *	\brief	Does jacobi iteration on grid
  */
 template <typename T> 
-Matrix<T> & jacobi(Matrix<T> & gridG, Matrix<T> & gridT, std::size_t numIters)
+Matrix<T> & jacobi(Matrix<T> & gridG, Matrix<T> & gridT, std::size_t numIters, T & e)
 {
-
 	for(std::size_t t = 0; t < numIters; ++t)
 	{
 		for(std::size_t i = 1; i < gridG.size() - 1; ++i)
@@ -167,6 +176,8 @@ Matrix<T> & jacobi(Matrix<T> & gridG, Matrix<T> & gridT, std::size_t numIters)
 						gridT[i][j] = (gridG[i][j-1] + gridG[i-1][j] + gridG[i+1][j] + gridG[i][j+1]) / static_cast<T>(4);
 			}
 		}
+		e = calculateDifference(gridG, gridT);
+		//std::cout << e << std::endl;
 		Matrix<T>::swap(gridG, gridT);
 	}
 	return gridG;
@@ -211,4 +222,25 @@ void Matrix<T>::swap(Matrix<T> & matA, Matrix<T> & matB)
 	value_type * tmp = matA.m_data;
 	matA.m_data = matB.m_data;
 	matB.m_data = tmp;
+}
+/*!
+ *	‪\brief	Calculates the maximum difference (epsilon) between two matrices
+ */
+template <typename T>
+T calculateDifference(Matrix<T> & gridG, Matrix<T> & gridT)
+{
+	if(gridG.size() != gridT.size())
+	{
+		std::cerr << "Invalid matrix dimension" << std::endl;
+		return -1.0f;
+	}
+	T e = 0;
+	for(std::size_t i = 0; i < gridG.size(); ++i)
+	{
+		for(std::size_t j = 0; j < gridT.size(); ++j)
+		{
+			e = std::max(e, std::abs(gridG[i][j] - gridT[i][j]));		
+		}
+	}
+	return e;
 }
