@@ -133,6 +133,10 @@ int main(int argc, const char * argv [])
 	// Set precision for cout
 	out << std::setprecision(g_dfpPrecision) << std::fixed;
 
+	// Set number of workers
+	omp_set_dynamic(0);     // Explicitly disable dynamic teams
+	omp_set_num_threads(g_numWorkers); // Use 4 threads for all consecutive parallel regions
+
 	// Do calculations	
 	startTime = omp_get_wtime();
 	for(std::size_t t = 0; t < g_numIters; ++t)
@@ -198,11 +202,15 @@ void initializeGrid(Matrix<T> & grid)
 template <typename T> 
 Matrix<T> & jacobi(Matrix<T> & gridG, Matrix<T> & gridT)
 {
-	for(std::size_t i = 1; i < gridG.size() - 1; ++i)
+	#pragma omp parallel
 	{
-		for(std::size_t j = 1; j < gridG.size() - 1; ++j)
+		#pragma omp for schedule(dynamic)
+		for(std::size_t i = 1; i < gridG.size() - 1; ++i)
 		{
-			gridT[i][j] = (gridG[i][j-1] + gridG[i-1][j] + gridG[i+1][j] + gridG[i][j+1]) / static_cast<T>(4);
+			for(std::size_t j = 1; j < gridG.size() - 1; ++j)
+			{
+				gridT[i][j] = (gridG[i][j-1] + gridG[i-1][j] + gridG[i+1][j] + gridG[i][j+1]) / static_cast<T>(4);
+			}
 		}
 	}
 	return gridT;
