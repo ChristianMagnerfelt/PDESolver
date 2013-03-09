@@ -31,8 +31,8 @@ std::string g_outFileName = DEFAULT_OUT_FILENAME;
 
 std::fstream out;
 
-int g_fpPrecision = 4;	//!< Floating point precision for streams
-float g_e; // Maximum error ( epsilon )
+int g_dfpPrecision = 15;	//!< Double floating point precision for streams
+double g_maxDiff; 				//!< Maximum difference between two iterations
 
 /*!
  *	\brief	A matrix class implementing the RAII pinciple
@@ -45,7 +45,12 @@ class Matrix{
 		Matrix(const Matrix &) = delete;				//!< Disable copying
 		Matrix & operator=(const Matrix &) = delete;	//!< Disable copying
 		
-		Matrix (std::size_t size) : m_size(size), m_data(new value_type[m_size * m_size]){}
+		explicit Matrix (std::size_t size) 
+			: m_size(size), m_data(new value_type[m_size * m_size]){}
+		Matrix (std::size_t size, const T & defValue) 
+			: m_size(size), m_data(new value_type[m_size * m_size])
+		{std::fill(begin(), end(), defValue);}
+
 		~Matrix(){ delete [] m_data; }
 		
 		value_type * operator [](std::size_t index){ return &(m_data[m_size * index]); }
@@ -64,13 +69,13 @@ class Matrix{
 
 // Matrix non-member functions ( Grid specific )
 template <typename T> 
-Matrix<T> & jacobi(Matrix<T> & gridG, Matrix<T> & gridT, std::size_t numIters, T & e);
+Matrix<T> & jacobi(Matrix<T> & gridG, Matrix<T> & gridT);
 template <typename T>
 void printGrid(const Matrix<T> & grid);
 template <typename T>
 void initializeGrid(Matrix<T> & grid);
 template <typename T>
-T calculateDifference(Matrix<T> & gridG, Matrix<T> & gridT);
+T calculateMaxDifference(Matrix<T> & gridG, Matrix<T> & gridT);
 
 
 // Function prototypes
@@ -111,27 +116,33 @@ int main(int argc, const char * argv [])
 	std::cout << "Number of workers is " << g_numWorkers << std::endl;
 	
 	// Initialize grid
-	Matrix<float> gridG(g_gridSize + 2);
-	Matrix<float> gridT(g_gridSize + 2);
-	g_e = 0;	
+	Matrix<double> gridG(g_gridSize + 2);
+	Matrix<double> gridT(g_gridSize + 2);
+	Matrix<double> finalGrid(g_gridSize + 2, 1.0);
+	g_maxDiff = 0;	
 
 	initializeGrid(gridG);
 	initializeGrid(gridT);
 
 	// Set precision for cout
-	out << std::setprecision(g_fpPrecision) << std::fixed;
+	out << std::setprecision(g_dfpPrecision) << std::fixed;
 
 	double startTime, endTime;
 	
 	// Do calculations	
 	startTime = omp_get_wtime();
-	auto & result = jacobi(gridG, gridT, g_numIters, g_e);
+	for(std::size_t t = 0; t < g_numIters; ++t)
+	{
+		jacobi(gridG, gridT);
+		g_maxDiff = calculateMaxDifference(gridG, gridT);
+		Matrix<double>::swap(gridG, gridT);
+	}
 	endTime = omp_get_wtime();
-	std::cout << "Maximum error" << g_e << std::endl;
+	std::cout << "Maximum difference " << g_maxDiff << std::endl;
 	std::cout << "Calculations took " << endTime - startTime << " seconds" << std::endl;
 	
 	// Print result
-	printGrid(result);
+	printGrid(gridG);
 	
 	out.close();
 	return 0;
@@ -165,22 +176,16 @@ void initializeGrid(Matrix<T> & grid)
  *	\brief	Does jacobi iteration on grid
  */
 template <typename T> 
-Matrix<T> & jacobi(Matrix<T> & gridG, Matrix<T> & gridT, std::size_t numIters, T & e)
+Matrix<T> & jacobi(Matrix<T> & gridG, Matrix<T> & gridT)
 {
-	for(std::size_t t = 0; t < numIters; ++t)
+	for(std::size_t i = 1; i < gridG.size() - 1; ++i)
 	{
-		for(std::size_t i = 1; i < gridG.size() - 1; ++i)
+		for(std::size_t j = 1; j < gridG.size() - 1; ++j)
 		{
-			for(std::size_t j = 1; j < gridG.size() - 1; ++j)
-			{
-						gridT[i][j] = (gridG[i][j-1] + gridG[i-1][j] + gridG[i+1][j] + gridG[i][j+1]) / static_cast<T>(4);
-			}
+			gridT[i][j] = (gridG[i][j-1] + gridG[i-1][j] + gridG[i+1][j] + gridG[i][j+1]) / static_cast<T>(4);
 		}
-		e = calculateDifference(gridG, gridT);
-		//std::cout << e << std::endl;
-		Matrix<T>::swap(gridG, gridT);
 	}
-	return gridG;
+	return gridT;
 }
 /*!
  *	\brief	Prints grid to cout
@@ -224,23 +229,23 @@ void Matrix<T>::swap(Matrix<T> & matA, Matrix<T> & matB)
 	matB.m_data = tmp;
 }
 /*!
- *	‪\brief	Calculates the maximum difference (epsilon) between two matrices
+ *	‪\brief	Calculates the maximum difference between two matrices
  */
 template <typename T>
-T calculateDifference(Matrix<T> & gridG, Matrix<T> & gridT)
+T calculateMaxDifference(Matrix<T> & gridG, Matrix<T> & gridT)
 {
 	if(gridG.size() != gridT.size())
 	{
 		std::cerr << "Invalid matrix dimension" << std::endl;
 		return -1.0f;
 	}
-	T e = 0;
+	T maxDiff = 0;
 	for(std::size_t i = 0; i < gridG.size(); ++i)
 	{
 		for(std::size_t j = 0; j < gridT.size(); ++j)
 		{
-			e = std::max(e, std::abs(gridG[i][j] - gridT[i][j]));		
+			maxDiff = std::max(maxDiff, std::abs(gridG[i][j] - gridT[i][j]));		
 		}
 	}
-	return e;
+	return maxDiff;
 }
