@@ -32,7 +32,6 @@ std::string g_outFileName = DEFAULT_OUT_FILENAME;
 std::fstream out;
 
 int g_dfpPrecision = 15;	//!< Double floating point precision for streams
-double g_maxDiff; 				//!< Maximum difference between two iterations
 
 /*!
  *	\brief	A matrix class implementing the RAII pinciple
@@ -115,30 +114,51 @@ int main(int argc, const char * argv [])
 	std::cout << "Number of iterations is " << g_numIters << std::endl;
 	std::cout << "Number of workers is " << g_numWorkers << std::endl;
 	
-	// Initialize grid
+	// Allocate and initialize grid
 	Matrix<double> gridG(g_gridSize + 2);
 	Matrix<double> gridT(g_gridSize + 2);
-	Matrix<double> finalGrid(g_gridSize + 2, 1.0);
-	g_maxDiff = 0;	
+	Matrix<double> compareGrid(g_gridSize + 2, 1.0);
 
 	initializeGrid(gridG);
 	initializeGrid(gridT);
 
+	// Initialize other values
+	double maxDiff = 0;			// Maximum difference between two iterations
+	double maxError = 0;		// Maximum error between result and correct answer
+	double startTime = 0;
+	double endTime = 0;
+	std::size_t totalIters = 0;
+	std::size_t checkMaxDiffFactor = 2 * g_gridSize; // How often we check the maximum difference between two grids.
+
 	// Set precision for cout
 	out << std::setprecision(g_dfpPrecision) << std::fixed;
 
-	double startTime, endTime;
-	
 	// Do calculations	
 	startTime = omp_get_wtime();
 	for(std::size_t t = 0; t < g_numIters; ++t)
 	{
 		jacobi(gridG, gridT);
-		g_maxDiff = calculateMaxDifference(gridG, gridT);
 		Matrix<double>::swap(gridG, gridT);
-	}
+
+		// If the grid size is large its likely to converge slower, thus we do 
+		// not need to check the maximum difference that often.
+		if((t % checkMaxDiffFactor) == 0)
+		{
+			maxDiff = calculateMaxDifference(gridT, gridG);
+			// If the maximum difference between the grid are 0 then break the loop 
+			// as there are not further improvements to make. We are done!
+			if(maxDiff <= 0.0)
+			{
+				totalIters = t + 1;
+				break;
+			}
+		}
+	}	
+	maxError = calculateMaxDifference(gridG, compareGrid);
 	endTime = omp_get_wtime();
-	std::cout << "Maximum difference " << g_maxDiff << std::endl;
+	std::cout << "Completed " << totalIters << "/" << g_numIters << " iterations" << std::endl; 
+	std::cout << "Maximum difference " << maxDiff << std::endl;
+	std::cout << "Maximum error " << maxError << std::endl;
 	std::cout << "Calculations took " << endTime - startTime << " seconds" << std::endl;
 	
 	// Print result
