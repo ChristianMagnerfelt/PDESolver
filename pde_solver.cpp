@@ -44,11 +44,14 @@ class Matrix{
 		Matrix(const Matrix &) = delete;				//!< Disable copying
 		Matrix & operator=(const Matrix &) = delete;	//!< Disable copying
 		
-		explicit Matrix (std::size_t size) 
+		explicit Matrix (std::size_t size = 0) 
 			: m_size(size), m_data(new value_type[m_size * m_size]){}
 		Matrix (std::size_t size, const T & defValue) 
 			: m_size(size), m_data(new value_type[m_size * m_size])
 		{std::fill(begin(), end(), defValue);}
+
+		explicit Matrix(Matrix<T> && other){ m_size = other.m_size; m_data = other.m_data; other.m_data = nullptr; }
+		//Matrix & operator=(Matrix && other){ delete [] m_data; m_size = other.m_size; m_data = other.m_data; other.m_data = nullptr; }
 
 		~Matrix(){ delete [] m_data; }
 		
@@ -75,7 +78,10 @@ template <typename T>
 void initializeGrid(Matrix<T> & grid);
 template <typename T>
 T calculateMaxDifference(Matrix<T> & gridG, Matrix<T> & gridT);
-
+template <typename T>
+void restrictGrid(Matrix<T> & gridH, Matrix<T> & gridH2);
+template <typename T>
+void project(Matrix<T> & gridH2, Matrix<T> & gridH);
 
 // Function prototypes
 template <typename T>
@@ -115,18 +121,38 @@ int main(int argc, const char * argv [])
 	std::cout << "Number of workers is " << g_numWorkers << std::endl;
 	
 	// Allocate and initialize grid
-	Matrix<double> gridG(g_gridSize + 2);
-	Matrix<double> gridT(g_gridSize + 2);
-	Matrix<double> compareGrid(g_gridSize + 2, 1.0);
+	std::size_t cycleLevel = 4;
+	std::vector<Matrix<double>> grids;
+	std::size_t hSize = g_gridSize;
+	for(std::size_t i = 1; i <= cycleLevel; ++i)
+	{
+		std::cout << "Level " << i << " size : " << hSize << std::endl;
+		grids.emplace_back(Matrix<double>(hSize + 2));
+		grids.emplace_back(Matrix<double>(hSize + 2));
+		
+		if( i == cycleLevel )
+			grids.emplace_back(Matrix<double>(hSize + 2, 1.0));
 
-	initializeGrid(gridG);
-	initializeGrid(gridT);
+		hSize = hSize * 2 + 1;
+	}
+
+	for(std::size_t i = 0; i < grids.size(); ++i)
+	{
+		std::cout << " H : " << grids[i].size() << std::endl;
+	}
+	Matrix<double> & compareGrid = grids[grids.size() - 1];
+
+	for(std::size_t i = 0; i < grids.size(); ++i)
+	{
+		initializeGrid(grids[i]);
+	}
 
 	// Initialize other values
 	double maxDiff = 0;			// Maximum difference between two iterations
 	double maxError = 0;		// Maximum error between result and correct answer
 	double startTime = 0;
 	double endTime = 0;
+	std::size_t levelIters = 4;
 	std::size_t totalIters = 0;
 	std::size_t checkMaxDiffFactor = 2 * g_gridSize; // How often we check the maximum difference between two grids.
 
@@ -135,16 +161,33 @@ int main(int argc, const char * argv [])
 
 	// Do calculations	
 	startTime = omp_get_wtime();
+	std::size_t level = 3;
+	for(std::size_t t = 0; t < cycleLevel; ++t)
+	{
+		// Iterate to smoothen the grid
+		for(std::size_t i = 0; i < levelIters; ++i)
+		{
+			jacobi(grids[level * 2], grids[level * 2 + 1]);
+			Matrix<double>::swap(grids[level * 2], grids[level * 2 + 1]);
+		}
+		// Restrict to coarser grid
+		if(level > 0)
+		{
+			restrictGrid(grids[level * 2], grids[(level - 1) * 2]);
+		}
+		--level;
+	}
+	// Full iteration on coarsest grid
 	for(std::size_t t = 0; t < g_numIters; ++t)
 	{
-		jacobi(gridG, gridT);
-		Matrix<double>::swap(gridG, gridT);
+		jacobi(grids[0], grids[1]);
+		Matrix<double>::swap(grids[0], grids[1]);
 
 		// If the grid size is large its likely to converge slower, thus we do 
 		// not need to check the maximum difference that often.
 		if((t % checkMaxDiffFactor) == 0)
 		{
-			maxDiff = calculateMaxDifference(gridT, gridG);
+			maxDiff = calculateMaxDifference(grids[0], grids[1]);
 			// If the maximum difference between the grid are 0 then break the loop 
 			// as there are not further improvements to make. We are done!
 			if(maxDiff <= 0.0)
@@ -153,16 +196,19 @@ int main(int argc, const char * argv [])
 				break;
 			}
 		}
-	}	
-	maxError = calculateMaxDifference(gridG, compareGrid);
+	}
+
+	auto & result = grids[(cycleLevel - 1) * 2];
+	maxError = calculateMaxDifference(result, compareGrid);
 	endTime = omp_get_wtime();
+
 	std::cout << "Completed " << totalIters << "/" << g_numIters << " iterations" << std::endl; 
 	std::cout << "Maximum difference " << maxDiff << std::endl;
 	std::cout << "Maximum error " << maxError << std::endl;
 	std::cout << "Calculations took " << endTime - startTime << " seconds" << std::endl;
 	
 	// Print result
-	printGrid(gridG);
+	printGrid(result);
 	
 	out.close();
 	return 0;
@@ -198,6 +244,12 @@ void initializeGrid(Matrix<T> & grid)
 template <typename T> 
 Matrix<T> & jacobi(Matrix<T> & gridG, Matrix<T> & gridT)
 {
+	if(gridG.size() != gridT.size())
+	{
+		std::cerr << "Invalid matrix dimension, can't run jacobi on grids of different size : " 
+			<< gridG.size() << " != " << gridT.size() << std::endl;
+		return gridG;
+	}
 	for(std::size_t i = 1; i < gridG.size() - 1; ++i)
 	{
 		for(std::size_t j = 1; j < gridG.size() - 1; ++j)
@@ -256,7 +308,8 @@ T calculateMaxDifference(Matrix<T> & gridG, Matrix<T> & gridT)
 {
 	if(gridG.size() != gridT.size())
 	{
-		std::cerr << "Invalid matrix dimension" << std::endl;
+		std::cerr << "Invalid matrix dimension, can't take difference of grids with different sizes : " 
+			<< gridG.size() << " != " << gridT.size() << std::endl;
 		return -1.0f;
 	}
 	T maxDiff = 0;
@@ -268,4 +321,29 @@ T calculateMaxDifference(Matrix<T> & gridG, Matrix<T> & gridT)
 		}
 	}
 	return maxDiff;
+}
+template <typename T>
+void restrictGrid(Matrix<T> & fine, Matrix<T> & coarse)
+{
+	if((fine.size() - 2) != ((coarse.size() - 2) * 2 + 1))
+	{
+		std::cerr << "Invalid dimension, can't restrict " << fine.size() - 2 << " to " << ((coarse.size() - 2)* 2 + 1) << std::endl;
+		return;
+	}
+	std::size_t y = 1;
+	std::size_t x = 1;
+	for(std::size_t i = 2; i < fine.size() - 2; i += 2)
+	{
+		for(std::size_t j = 2; j < fine.size() - 2; j += 2)
+		{
+			coarse[y][x] = fine[i][j] * 0.5 + (fine[i-1][j] + fine[i][j-1] + fine[i+1][j] + fine[i][j+1]) * 0.125;
+			++x;
+		}
+		++y;
+	}
+}
+template <typename T>
+void project(Matrix<T> & gridH2, Matrix<T> & gridH)
+{
+	
 }
