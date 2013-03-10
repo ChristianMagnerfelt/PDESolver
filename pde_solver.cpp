@@ -41,9 +41,6 @@ class Matrix{
 	public:
 		typedef T value_type;
 		
-		Matrix(const Matrix &) = delete;				//!< Disable copying
-		Matrix & operator=(const Matrix &) = delete;	//!< Disable copying
-		
 		explicit Matrix (std::size_t size = 0) 
 			: m_size(size), m_data(new value_type[m_size * m_size]){}
 		Matrix (std::size_t size, const T & defValue) 
@@ -51,7 +48,7 @@ class Matrix{
 		{std::fill(begin(), end(), defValue);}
 
 		explicit Matrix(Matrix<T> && other){ m_size = other.m_size; m_data = other.m_data; other.m_data = nullptr; }
-		//Matrix & operator=(Matrix && other){ delete [] m_data; m_size = other.m_size; m_data = other.m_data; other.m_data = nullptr; }
+		Matrix & operator=(Matrix && other){ delete [] m_data; m_size = other.m_size; m_data = other.m_data; other.m_data = nullptr; return *this; }
 
 		~Matrix(){ delete [] m_data; }
 		
@@ -65,6 +62,9 @@ class Matrix{
 		
 		static void swap(Matrix<T> & matA, Matrix<T> & matB);
 	private:
+		Matrix(const Matrix &){};				//!< Disable copying
+		Matrix & operator=(const Matrix &){};	//!< Disable copying
+
 		std::size_t m_size;	
 		value_type * m_data;
 };
@@ -79,9 +79,9 @@ void initializeGrid(Matrix<T> & grid);
 template <typename T>
 T calculateMaxDifference(Matrix<T> & gridG, Matrix<T> & gridT);
 template <typename T>
-void restrictGrid(Matrix<T> & gridH, Matrix<T> & gridH2);
+void restrictGrid(const Matrix<T> & fine, Matrix<T> & coarse);
 template <typename T>
-void project(Matrix<T> & gridH2, Matrix<T> & gridH);
+void projectGrid(const Matrix<T> & coarse, Matrix<T> & fine);
 
 // Function prototypes
 template <typename T>
@@ -123,6 +123,7 @@ int main(int argc, const char * argv [])
 	// Allocate and initialize grid
 	std::size_t cycleLevel = 4;
 	std::vector<Matrix<double>> grids;
+	grids.reserve(cycleLevel * 2);
 	std::size_t hSize = g_gridSize;
 	for(std::size_t i = 1; i <= cycleLevel; ++i)
 	{
@@ -279,7 +280,7 @@ void printGrid(const Matrix<T> & grid)
  * 			then value is assigned a default value.
  */
 template <typename T> 
-void cmdLineArgToValue(const char * str, T & value, T defValue = T())
+void cmdLineArgToValue(const char * str, T & value, T defValue)
 {
 	std::istringstream iss(str);
 	iss >> value;
@@ -323,19 +324,22 @@ T calculateMaxDifference(Matrix<T> & gridG, Matrix<T> & gridT)
 	return maxDiff;
 }
 template <typename T>
-void restrictGrid(Matrix<T> & fine, Matrix<T> & coarse)
+void restrictGrid(const Matrix<T> & fine, Matrix<T> & coarse)
 {
-	if((fine.size() - 2) != ((coarse.size() - 2) * 2 + 1))
-	{
-		std::cerr << "Invalid dimension, can't restrict " << fine.size() - 2 << " to " << ((coarse.size() - 2)* 2 + 1) << std::endl;
-		return;
-	}
+	#if _DEBUG
+		if((fine.size() - 2) != ((coarse.size() - 2) * 2 + 1))
+		{
+			std::cerr << "Invalid dimension, can't restrict " << fine.size() - 2 << " to " << ((coarse.size() - 2)* 2 + 1) << std::endl;
+			return;
+		}
+	#endif
 	std::size_t y = 1;
 	std::size_t x = 1;
 	for(std::size_t i = 2; i < fine.size() - 2; i += 2)
 	{
 		for(std::size_t j = 2; j < fine.size() - 2; j += 2)
 		{
+			x = 1;
 			coarse[y][x] = fine[i][j] * 0.5 + (fine[i-1][j] + fine[i][j-1] + fine[i+1][j] + fine[i][j+1]) * 0.125;
 			++x;
 		}
@@ -343,7 +347,29 @@ void restrictGrid(Matrix<T> & fine, Matrix<T> & coarse)
 	}
 }
 template <typename T>
-void project(Matrix<T> & gridH2, Matrix<T> & gridH)
+void projectGrid(const Matrix<T> & coarse, Matrix<T> & fine)
 {
-	
+	#if _DEBUG
+		if((fine.size() - 2) != ((coarse.size() - 2) * 2 + 1))
+		{
+			std::cerr << "Invalid dimension, can't project " << ((coarse.size() - 2)* 2 + 1) << " to " << fine.size() - 2 << std::endl;
+			return;
+		}
+	#endif
+	std::size_t y = 1;
+	std::size_t x = 1;
+	for(std::size_t i = 2; i < fine.size() - 2; i += 2)
+	{
+		for(std::size_t j = 2; j < fine.size() - 2; j += 2)
+		{
+			x = 1;
+			fine[i][j] = coarse[y][x] * 0.5;
+			fine[i-1][j] = coarse[y][x] * 0.125
+			fine[i][j-1] = coarse[y][x] * 0.125
+			fine[i+1][j] = coarse[y][x] * 0.125
+			fine[i][j+1] = coarse[y][x] * 0.125
+			++x;
+		}
+		++y;
+	}	
 }
