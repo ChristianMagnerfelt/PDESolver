@@ -31,7 +31,7 @@ std::string g_outFileName = DEFAULT_OUT_FILENAME;
 
 std::fstream out;
 
-int g_dfpPrecision = 15;	//!< Double floating point precision for streams
+int g_dfpPrecision = 2;	//!< Double floating point precision for streams
 
 /*!
  *	\brief	A matrix class implementing the RAII pinciple
@@ -162,8 +162,7 @@ int main(int argc, const char * argv [])
 
 	// Do calculations	
 	startTime = omp_get_wtime();
-	std::size_t level = 3;
-	for(std::size_t t = 0; t < cycleLevel; ++t)
+	for(std::size_t level = 3; level > 0; --level)
 	{
 		// Iterate to smoothen the grid
 		for(std::size_t i = 0; i < levelIters; ++i)
@@ -172,11 +171,7 @@ int main(int argc, const char * argv [])
 			Matrix<double>::swap(grids[level * 2], grids[level * 2 + 1]);
 		}
 		// Restrict to coarser grid
-		if(level > 0)
-		{
-			restrictGrid(grids[level * 2], grids[(level - 1) * 2]);
-		}
-		--level;
+		restrictGrid(grids[level * 2], grids[(level - 1) * 2]);
 	}
 	// Full iteration on coarsest grid
 	for(std::size_t t = 0; t < g_numIters; ++t)
@@ -198,6 +193,20 @@ int main(int argc, const char * argv [])
 			}
 		}
 	}
+	printGrid(grids[0]);
+	for(std::size_t level = 0; level < (cycleLevel - 1); ++level)
+	{
+		// Restrict to coarser grid
+		projectGrid(grids[level * 2], grids[(level + 1) * 2]);
+
+		// Iterate to smoothen the grid
+		for(std::size_t i = 0; i < levelIters; ++i)
+		{
+			jacobi(grids[(level + 1) * 2], grids[(level + 1) * 2 + 1]);
+			Matrix<double>::swap(grids[(level + 1) * 2], grids[(level + 1) * 2 + 1]);
+		}
+	}
+
 
 	auto & result = grids[(cycleLevel - 1) * 2];
 	maxError = calculateMaxDifference(result, compareGrid);
@@ -209,7 +218,7 @@ int main(int argc, const char * argv [])
 	std::cout << "Calculations took " << endTime - startTime << " seconds" << std::endl;
 	
 	// Print result
-	printGrid(result);
+	// printGrid(result);
 	
 	out.close();
 	return 0;
@@ -222,7 +231,9 @@ void initializeGrid(Matrix<T> & grid)
 {
 	if(grid.size() < 3)
 		return;
-		
+	
+	std::fill(grid.begin(), grid.end(), static_cast<T>(0));
+
 	// Fill first row
 	for(std::size_t i = 0; i < grid.size(); ++i)
 		grid[0][i] = static_cast<T>(1);
@@ -363,11 +374,15 @@ void projectGrid(const Matrix<T> & coarse, Matrix<T> & fine)
 		for(std::size_t j = 2; j < fine.size() - 2; j += 2)
 		{
 			x = 1;
-			fine[i][j] = coarse[y][x] * 0.5;
-			fine[i-1][j] = coarse[y][x] * 0.125
-			fine[i][j-1] = coarse[y][x] * 0.125
-			fine[i+1][j] = coarse[y][x] * 0.125
-			fine[i][j+1] = coarse[y][x] * 0.125
+			fine[i][j] = coarse[y][x] * 1.0;
+			fine[i-1][j] = coarse[y][x] * 0.5;
+			fine[i][j-1] = coarse[y][x] * 0.5;
+			fine[i+1][j] = coarse[y][x] * 0.5;
+			fine[i][j+1] = coarse[y][x] * 0.5;
+			fine[i+1][j+1] = coarse[y][x] * 0.125;
+			fine[i-1][j-1] = coarse[y][x] * 0.125;
+			fine[i+1][j-1] = coarse[y][x] * 0.125;
+			fine[i-1][j+1] = coarse[y][x] * 0.125;
 			++x;
 		}
 		++y;
