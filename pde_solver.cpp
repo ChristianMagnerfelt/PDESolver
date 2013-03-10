@@ -38,11 +38,18 @@ int g_dfpPrecision = 15;	//!< Double floating point precision for streams
  */
 template <typename T>
 class Matrix{
+	// vs12 & gcc 4.7 compability
+		#if _WIN32
+			private:
+			Matrix(const Matrix &){};					//!< Disable copying
+			Matrix & operator=(const Matrix &){};		//!< Disable copy assigment
+		#else
+			public:
+			Matrix(const Matrix &) = delete;				//!< Disable copying
+			Matrix & operator=(const Matrix &) = delete;	//!< Disable copy assigment
+		#endif
 	public:
 		typedef T value_type;
-		
-		Matrix(const Matrix &) = delete;				//!< Disable copying
-		Matrix & operator=(const Matrix &) = delete;	//!< Disable copying
 		
 		explicit Matrix (std::size_t size) 
 			: m_size(size), m_data(new value_type[m_size * m_size]){}
@@ -235,7 +242,7 @@ void printGrid(const Matrix<T> & grid)
  * 			then value is assigned a default value.
  */
 template <typename T> 
-void cmdLineArgToValue(const char * str, T & value, T defValue = T())
+void cmdLineArgToValue(const char * str, T & value, T defValue)
 {
 	std::istringstream iss(str);
 	iss >> value;
