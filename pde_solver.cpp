@@ -37,7 +37,18 @@ int g_dfpPrecision = 2;	//!< Double floating point precision for streams
  *	\brief	A matrix class implementing the RAII pinciple
  */
 template <typename T>
-class Matrix{
+class Matrix
+{
+	// vs12 & gcc 4.7 compability
+		#if _WIN32
+			private:
+			Matrix(const Matrix &){};					//!< Disable copying
+			Matrix & operator=(const Matrix &){};		//!< Disable copy assigment
+		#else
+			public:
+			Matrix(const Matrix &) = delete;				//!< Disable copying
+			Matrix & operator=(const Matrix &) = delete;	//!< Disable copy assigment
+		#endif
 	public:
 		typedef T value_type;
 		
@@ -62,9 +73,6 @@ class Matrix{
 		
 		static void swap(Matrix<T> & matA, Matrix<T> & matB);
 	private:
-		Matrix(const Matrix &){};				//!< Disable copying
-		Matrix & operator=(const Matrix &){};	//!< Disable copying
-
 		std::size_t m_size;	
 		value_type * m_data;
 };
