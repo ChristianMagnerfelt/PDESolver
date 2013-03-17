@@ -1,6 +1,12 @@
 PDE Solvers for the Laplace's Equation
 --------------------------------------
 
+Author:
+	Christian Magnerfelt 
+
+Email:
+	magnerf@kth.se
+
 Description:
 	A collection of 4 programs to calculate partial differential equations 		also known as PDE Solvers.
 
