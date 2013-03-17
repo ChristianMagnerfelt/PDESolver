@@ -140,18 +140,16 @@ int main(int argc, const char * argv [])
 		grids.emplace_back(Matrix<double>(hSize + 2));
 		
 		if( i == cycleLevel )
-			grids.emplace_back(Matrix<double>(hSize + 2, 1.0));
-
+		{
+			grids.emplace_back(Matrix<double>(hSize + 2, 1.0));	
+		}
 		hSize = hSize * 2 + 1;
 	}
 
-	for(std::size_t i = 0; i < grids.size(); ++i)
-	{
-		std::cout << " H : " << grids[i].size() << std::endl;
-	}
 	Matrix<double> & compareGrid = grids[grids.size() - 1];
-
-	for(std::size_t i = 0; i < grids.size(); ++i)
+	
+	
+	for(std::size_t i = 0; i < grids.size() - 1; ++i)
 	{
 		initializeGrid(grids[i]);
 	}
@@ -201,12 +199,12 @@ int main(int argc, const char * argv [])
 			}
 		}
 	}
-	printGrid(grids[0]);
+
 	for(std::size_t level = 0; level < (cycleLevel - 1); ++level)
 	{
-		// Restrict to coarser grid
+		// Inerploate to coarser grid to fine
 		projectGrid(grids[level * 2], grids[(level + 1) * 2]);
-
+		
 		// Iterate to smoothen the grid
 		for(std::size_t i = 0; i < levelIters; ++i)
 		{
@@ -214,7 +212,6 @@ int main(int argc, const char * argv [])
 			Matrix<double>::swap(grids[(level + 1) * 2], grids[(level + 1) * 2 + 1]);
 		}
 	}
-
 
 	auto & result = grids[(cycleLevel - 1) * 2];
 	maxError = calculateMaxDifference(result, compareGrid);
@@ -226,7 +223,8 @@ int main(int argc, const char * argv [])
 	std::cout << "Calculations took " << endTime - startTime << " seconds" << std::endl;
 	
 	// Print result
-	// printGrid(result);
+	//printGrid(grids[grids.size() - 1]);
+	printGrid(result);
 	
 	out.close();
 	return 0;
@@ -375,24 +373,65 @@ void projectGrid(const Matrix<T> & coarse, Matrix<T> & fine)
 			return;
 		}
 	#endif
-	std::size_t y = 1;
-	std::size_t x = 1;
-	for(std::size_t i = 2; i < fine.size() - 2; i += 2)
+	
 	{
-		for(std::size_t j = 2; j < fine.size() - 2; j += 2)
+		std::size_t x = 0;
+		std::size_t y = 0;
+		for(std::size_t i = 1; i < fine.size() - 1; i += 2)
 		{
-			x = 1;
-			fine[i][j] = coarse[y][x] * 1.0;
-			fine[i-1][j] = coarse[y][x] * 0.5;
-			fine[i][j-1] = coarse[y][x] * 0.5;
-			fine[i+1][j] = coarse[y][x] * 0.5;
-			fine[i][j+1] = coarse[y][x] * 0.5;
-			fine[i+1][j+1] = coarse[y][x] * 0.125;
-			fine[i-1][j-1] = coarse[y][x] * 0.125;
-			fine[i+1][j-1] = coarse[y][x] * 0.125;
-			fine[i-1][j+1] = coarse[y][x] * 0.125;
-			++x;
+		
+			for(std::size_t j = 1; j < fine.size() - 1; j += 2)
+			{
+				fine[i][j] = (coarse[y + 1][x + 1] + coarse[y][x + 1] + coarse[y + 1][x] + coarse[y][x]) * 0.25;
+				++x;
+			}
+			x = 0;
+			++y;
 		}
-		++y;
-	}	
+	}
+	{
+		std::size_t x = 1;
+		std::size_t y = 1;	
+		for(std::size_t i = 2; i < fine.size() - 2; i += 2)
+		{
+		
+			for(std::size_t j = 2; j < fine.size() - 2; j += 2)
+			{
+				fine[i][j] = (coarse[y][x]);
+				++x;
+			}
+			x = 0;
+			++y;
+		}
+	}
+	{
+		std::size_t x = 1;
+		std::size_t y = 0;	
+		for(std::size_t i = 1; i < fine.size() - 1; i += 2)
+		{
+		
+			for(std::size_t j = 2; j < fine.size() - 2; j += 2)
+			{
+				fine[i][j] = (coarse[y][x] + coarse[y + 1][x]) * 0.5;
+				++x;
+			}
+			x = 0;
+			++y;
+		}
+	}
+	{
+		std::size_t x = 0;
+		std::size_t y = 1;	
+		for(std::size_t i = 2; i < fine.size() - 2; i += 2)
+		{
+		
+			for(std::size_t j = 1; j < fine.size() - 1; j += 2)
+			{
+				fine[i][j] = (coarse[y][x] + coarse[y][x + 1]) * 0.5;
+				++x;
+			}
+			x = 0;
+			++y;
+		}
+	}					
 }
