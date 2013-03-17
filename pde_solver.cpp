@@ -178,12 +178,12 @@ int main(int argc, const char * argv [])
 	{
 		for(std::size_t level = 3; level > 0; --level)
 		{
+			Matrix<double> & gridG = grids[level * 2];
+			Matrix<double> & gridT = grids[level * 2 + 1];
+
 			// Iterate to smoothen the grid
 			for(std::size_t i = 0; i < levelIters; ++i)
 			{
-				Matrix<double> & gridG = grids[level * 2];
-				Matrix<double> & gridT = grids[level * 2 + 1];
-
 				#pragma omp parallel for
 				for(std::size_t i = 1; i < gridG.size() - 1; ++i)
 				{
@@ -201,17 +201,29 @@ int main(int argc, const char * argv [])
 				#pragma omp barrier
 			}
 			// Restrict to coarser grid
-			#pragma omp master
+			Matrix<double> & fine = grids[level * 2];
+			Matrix<double> & coarse = grids[(level - 1) * 2];
+				
+			std::size_t y = 1;
+			std::size_t x = 1;
+
+			#pragma omp parallel for
+			for(std::size_t i = 2; i < fine.size() - 2; i += 2)
 			{
-				restrictGrid(grids[level * 2], grids[(level - 1) * 2]);
+				for(std::size_t j = 2; j < fine.size() - 2; j += 2)
+				{
+					x = 1;
+					coarse[y][x] = fine[i][j] * 0.5 + (fine[i-1][j] + fine[i][j-1] + fine[i+1][j] + fine[i][j+1]) * 0.125;
+					++x;
+				}
+				++y;
 			}
 			#pragma omp barrier
 		}
-	}
+
 		Matrix<double> & gridG = grids[0];
 		Matrix<double> & gridT = grids[1];
-	#pragma omp parallel
-	{
+
 		// Full iteration on coarsest grid
 		for(std::size_t t = 0; t < g_numIters; ++t)
 		{
@@ -246,18 +258,107 @@ int main(int argc, const char * argv [])
 			if(done)
 				break;
 		}
-	}
 
-	for(std::size_t level = 0; level < (cycleLevel - 1); ++level)
-	{
-		// Inerploate to coarser grid to fine
-		projectGrid(grids[level * 2], grids[(level + 1) * 2]);
-		
-		// Iterate to smoothen the grid
-		for(std::size_t i = 0; i < levelIters; ++i)
+		for(std::size_t level = 0; level < (cycleLevel - 1); ++level)
 		{
-			jacobi(grids[(level + 1) * 2], grids[(level + 1) * 2 + 1]);
-			Matrix<double>::swap(grids[(level + 1) * 2], grids[(level + 1) * 2 + 1]);
+			// Inerploate to coarser grid to fine
+			Matrix<double> & coarse = grids[level * 2];
+			Matrix<double> & fine = grids[(level + 1) * 2];
+
+			#pragma omp sections
+			{
+				#pragma omp section
+				{
+					std::size_t x = 0;
+					std::size_t y = 0;
+					for(std::size_t i = 1; i < fine.size() - 1; i += 2)
+					{
+						for(std::size_t j = 1; j < fine.size() - 1; j += 2)
+						{
+							fine[i][j] = (coarse[y + 1][x + 1] + coarse[y][x + 1] + coarse[y + 1][x] + coarse[y][x]) * 0.25;
+							++x;
+						}
+						x = 0;
+						++y;
+					}
+				}
+
+				#pragma omp section
+				{
+					std::size_t x = 1;
+					std::size_t y = 1;	
+					for(std::size_t i = 2; i < fine.size() - 2; i += 2)
+					{
+		
+						for(std::size_t j = 2; j < fine.size() - 2; j += 2)
+						{
+							fine[i][j] = (coarse[y][x]);
+							++x;
+						}
+						x = 0;
+						++y;
+					}
+				}
+
+				#pragma omp section
+				{
+					std::size_t x = 1;
+					std::size_t y = 0;	
+					for(std::size_t i = 1; i < fine.size() - 1; i += 2)
+					{
+		
+						for(std::size_t j = 2; j < fine.size() - 2; j += 2)
+						{
+							fine[i][j] = (coarse[y][x] + coarse[y + 1][x]) * 0.5;
+							++x;
+						}
+						x = 0;
+						++y;
+					}
+				}
+
+				#pragma omp section
+				{
+					std::size_t x = 0;
+					std::size_t y = 1;	
+					for(std::size_t i = 2; i < fine.size() - 2; i += 2)
+					{
+		
+						for(std::size_t j = 1; j < fine.size() - 1; j += 2)
+						{
+							fine[i][j] = (coarse[y][x] + coarse[y][x + 1]) * 0.5;
+							++x;
+						}
+						x = 0;
+						++y;
+					}
+				}	
+			}
+			
+			#pragma omp barrier
+			// Iterate to smoothen the grid
+
+			Matrix<double> & gridG = grids[(level + 1) * 2];
+			Matrix<double> & gridT = grids[(level + 1) * 2 + 1];
+
+			for(std::size_t i = 0; i < levelIters; ++i)
+			{
+				#pragma omp parallel for
+				for(std::size_t i = 1; i < gridG.size() - 1; ++i)
+				{
+					for(std::size_t j = 1; j < gridG.size() - 1; ++j)
+					{
+						gridT[i][j] = (gridG[i][j-1] + gridG[i-1][j] + gridG[i+1][j] + gridG[i][j+1]) / 4.0;
+					}
+				}
+
+				#pragma omp master
+				{
+					Matrix<double>::swap(gridG, gridT);
+				}
+				#pragma omp barrier
+			}
+			#pragma omp barrier
 		}
 	}
 
