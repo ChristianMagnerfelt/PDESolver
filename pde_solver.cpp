@@ -166,37 +166,85 @@ int main(int argc, const char * argv [])
 	// Set precision for cout
 	out << std::setprecision(g_dfpPrecision) << std::fixed;
 
+	// Set number of workers
+	omp_set_dynamic(0); // Explicitly disable dynamic teams
+	omp_set_num_threads(g_numWorkers); // Use 4 threads for all consecutive parallel regions
+
+	bool done = false;
+
 	// Do calculations	
 	startTime = omp_get_wtime();
-	for(std::size_t level = 3; level > 0; --level)
+	#pragma omp parallel
 	{
-		// Iterate to smoothen the grid
-		for(std::size_t i = 0; i < levelIters; ++i)
+		for(std::size_t level = 3; level > 0; --level)
 		{
-			jacobi(grids[level * 2], grids[level * 2 + 1]);
-			Matrix<double>::swap(grids[level * 2], grids[level * 2 + 1]);
-		}
-		// Restrict to coarser grid
-		restrictGrid(grids[level * 2], grids[(level - 1) * 2]);
-	}
-	// Full iteration on coarsest grid
-	for(std::size_t t = 0; t < g_numIters; ++t)
-	{
-		jacobi(grids[0], grids[1]);
-		Matrix<double>::swap(grids[0], grids[1]);
-
-		// If the grid size is large its likely to converge slower, thus we do 
-		// not need to check the maximum difference that often.
-		if((t % checkMaxDiffFactor) == 0)
-		{
-			maxDiff = calculateMaxDifference(grids[0], grids[1]);
-			// If the maximum difference between the grid are 0 then break the loop 
-			// as there are not further improvements to make. We are done!
-			if(maxDiff <= 0.0)
+			// Iterate to smoothen the grid
+			for(std::size_t i = 0; i < levelIters; ++i)
 			{
-				totalIters = t + 1;
-				break;
+				Matrix<double> & gridG = grids[level * 2];
+				Matrix<double> & gridT = grids[level * 2 + 1];
+
+				#pragma omp parallel for
+				for(std::size_t i = 1; i < gridG.size() - 1; ++i)
+				{
+					for(std::size_t j = 1; j < gridG.size() - 1; ++j)
+					{
+						gridT[i][j] = (gridG[i][j-1] + gridG[i-1][j] + gridG[i+1][j] + gridG[i][j+1]) / 4.0;
+					}
+				}
+
+				#pragma omp master
+				{
+					Matrix<double>::swap(gridG, gridT);
+				}
+
+				#pragma omp barrier
 			}
+			// Restrict to coarser grid
+			#pragma omp master
+			{
+				restrictGrid(grids[level * 2], grids[(level - 1) * 2]);
+			}
+			#pragma omp barrier
+		}
+	}
+		Matrix<double> & gridG = grids[0];
+		Matrix<double> & gridT = grids[1];
+	#pragma omp parallel
+	{
+		// Full iteration on coarsest grid
+		for(std::size_t t = 0; t < g_numIters; ++t)
+		{
+			#pragma omp parallel for
+			for(std::size_t i = 1; i < gridG.size() - 1; ++i)
+			{
+				for(std::size_t j = 1; j < gridG.size() - 1; ++j)
+				{
+					gridT[i][j] = (gridG[i][j-1] + gridG[i-1][j] + gridG[i+1][j] + gridG[i][j+1]) / 4.0;
+				}
+			}
+
+			#pragma omp master
+			{
+				Matrix<double>::swap(gridG, gridT);
+
+				// If the grid size is large its likely to converge slower, thus we do 
+				// not need to check the maximum difference that often.
+				if((t % checkMaxDiffFactor) == 0)
+				{
+					maxDiff = calculateMaxDifference(gridG, gridT);
+					// If the maximum difference between the grid are 0 then break the loop 
+					// as there are not further improvements to make. We are done!
+					if(maxDiff <= 0.0)
+					{
+						totalIters = t + 1;
+						done = true;
+					}
+				}
+			}
+			#pragma omp barrier
+			if(done)
+				break;
 		}
 	}
 
