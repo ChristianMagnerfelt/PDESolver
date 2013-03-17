@@ -146,23 +146,42 @@ int main(int argc, const char * argv [])
 
 	// Do calculations	
 	startTime = omp_get_wtime();
-	for(std::size_t t = 0; t < g_numIters; ++t)
+	bool done = false;
+	#pragma omp parallel
 	{
-		jacobi(gridG, gridT);
-		Matrix<double>::swap(gridG, gridT);
-
-		// If the grid size is large its likely to converge slower, thus we do 
-		// not need to check the maximum difference that often.
-		if((t % checkMaxDiffFactor) == 0)
+		for(std::size_t t = 0; t < g_numIters; ++t)
 		{
-			maxDiff = calculateMaxDifference(gridT, gridG);
-			// If the maximum difference between the grid are 0 then break the loop 
-			// as there are not further improvements to make. We are done!
-			if(maxDiff <= 0.0)
+			#pragma omp for 
+			for(std::size_t i = 1; i < gridG.size() - 1; ++i)
 			{
-				totalIters = t + 1;
-				break;
+				for(std::size_t j = 1; j < gridG.size() - 1; ++j)
+				{
+						gridT[i][j] = (gridG[i][j-1] + gridG[i-1][j] + gridG[i+1][j] + gridG[i][j+1]) / static_cast<double>(4);
+				}
+			}		
+		
+			#pragma omp master
+			{
+				Matrix<double>::swap(gridG, gridT);
+
+				// If the grid size is large its likely to converge slower, thus we do 
+				// not need to check the maximum difference that often.
+				if((t % checkMaxDiffFactor) == 0)
+				{
+					maxDiff = calculateMaxDifference(gridT, gridG);
+					// If the maximum difference between the grid are 0 then break the loop 
+					// as there are not further improvements to make. We are done!
+					if(maxDiff <= 0.0)
+					{
+						totalIters = t + 1;
+						done = true;
+					}
+				}
 			}
+			
+			#pragma omp barrier
+			if(done)
+				break;
 		}
 	}	
 	maxError = calculateMaxDifference(gridG, compareGrid);
@@ -209,15 +228,12 @@ void initializeGrid(Matrix<T> & grid)
 template <typename T> 
 Matrix<T> & jacobi(Matrix<T> & gridG, Matrix<T> & gridT)
 {
-	#pragma omp parallel
+	#pragma omp for schedule(dynamic)
+	for(std::size_t i = 1; i < gridG.size() - 1; ++i)
 	{
-		#pragma omp for schedule(dynamic)
-		for(std::size_t i = 1; i < gridG.size() - 1; ++i)
+		for(std::size_t j = 1; j < gridG.size() - 1; ++j)
 		{
-			for(std::size_t j = 1; j < gridG.size() - 1; ++j)
-			{
 				gridT[i][j] = (gridG[i][j-1] + gridG[i-1][j] + gridG[i+1][j] + gridG[i][j+1]) / static_cast<T>(4);
-			}
 		}
 	}
 	return gridT;
